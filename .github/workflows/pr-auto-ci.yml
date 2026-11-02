@@ -109,14 +109,22 @@ jobs:
           fi
 
           for PR in $CANDIDATES; do
-            # DNM TEST: approval hardcoded — pretend the PR is approved.
-            echo "DNM TEST: approval check bypassed for PR #$PR, reporting approved=true"
-            echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
-            echo "approved=true" >> "$GITHUB_OUTPUT"
-            exit 0
+            APPROVED=$(gh pr view "$PR" --repo "$REPO" --json reviews \
+              --jq '[.reviews[]
+                     | select(.state == "APPROVED"
+                              and (.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR")))] | length')
+            if [[ "${APPROVED:-0}" -gt 0 ]]; then
+              echo "PR #$PR has $APPROVED approval(s)"
+              echo "pr_number=$PR" >> "$GITHUB_OUTPUT"
+              echo "approved=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "PR #$PR has no approvals"
           done
 
-          echo "No open PR has head $RUN_HEAD_SHA"
+          if [[ -z "$CANDIDATES" ]]; then
+            echo "No open PR has head $RUN_HEAD_SHA (pushed since the review?)"
+          fi
           echo "approved=false" >> "$GITHUB_OUTPUT"
 
   auto-ci:
