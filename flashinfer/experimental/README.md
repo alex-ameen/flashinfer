@@ -343,27 +343,52 @@ default in supported framework releases. A request for default or supported
 release-path integration is a signal that the feature should be considered
 for graduation.
 
-Release wheels published to PyPI omit most experimental packages' generated
-kernel sources (`csrc/**` and `csrc/experimental/**`): the release
-workflow builds with `FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES=1` so that
-`flashinfer-python` stays under PyPI's per-file size limit (#7977). The Python
-modules stay importable, but loads requiring omitted sources raise;
-`flashinfer/experimental/KERNEL_SOURCES_EXCLUDED.txt` explains the omissions.
-Nightly wheels on https://flashinfer.ai/whl and source installs include the
-sources, matching the audience above.
+### Packaging: the `flashinfer-experimental` distribution
 
-The HC sum-state backend's `binding.cu` and `kernels.cuh` are retained for JIT
-by an exact-path allowlist. The API remains experimental and JIT-only; including
-these sources does not enable it by default or register it in AOT.
+Release artifacts (PyPI and the nightly index) ship this directory in a
+separate distribution, `flashinfer-experimental`, so that `flashinfer-python`
+stays small. Users install it with `pip install "flashinfer-python[experimental]"`
+(or `pip install flashinfer-experimental`); it installs into the same
+`flashinfer` package and pins `flashinfer-python==<its own version>`. Source
+installs contain the whole tree. The split is done by `build_backend.py`
+("Wheel post-processing"): `FLASHINFER_SPLIT_EXPERIMENTAL=1` drops the
+split-out files from the `flashinfer-python` wheel and sdist, and
+`python -m build --wheel flashinfer-experimental` packages exactly those files,
+so the two wheels never share a file. `scripts/check_experimental_split.py`
+verifies the built artifacts in `release-build.yml`.
 
-The Cake training backends under `flashinfer/experimental/cake/<module>/` are
-fully exempt (#8928). Each backs a stable top-level facade
-`flashinfer.cake_<op>_<det|nondet>_train[_kcp]` that is not an experimental
-API. The facade imports its backend inside its functions or through its module
-`__getattr__`, never at module level, and its top-level names in
-`flashinfer/__init__.py` are rows of the lazy-export table `_LAZY_EXPORTS`, so
-`import flashinfer` still loads no backend. Their `csrc/**` ships in every
-wheel, including the release wheel on PyPI.
+Everything under `flashinfer/experimental/` goes to `flashinfer-experimental`,
+together with `csrc/experimental/**` and the top-level `b12x` alias package,
+except what stable code needs without it:
+
+- `flashinfer/experimental/__init__.py` — this namespace and its opt-in helpers;
+- `flashinfer/experimental/cake/**` — the Cake training backends (#8928). Each
+  backs a stable top-level facade `flashinfer.cake_<op>_<det|nondet>_train[_kcp]`
+  that is not an experimental API. The facade imports its backend inside its
+  functions or through its module `__getattr__`, never at module level, and its
+  top-level names in `flashinfer/__init__.py` are rows of the lazy-export table
+  `_LAZY_EXPORTS`, so `import flashinfer` still loads no backend;
+- `flashinfer/experimental/cake_nvfp4_per_token/{__init__,support}.py` — the
+  sanctioned module-level support import of `flashinfer/gemm/gemm_base.py`.
+
+Consequences for contributors:
+
+- Core must work with only those parts present. A thin entry point's deferred
+  import (the containment rules above) then raises `ModuleNotFoundError`
+  naming `flashinfer-experimental`, raised by the namespace's import hook;
+  do not catch it.
+- A support module that core imports at module level must stay inside the kept
+  set, import nothing from the split-out part, and decline automatic selection
+  when `experimental_package_installed()` is false (see
+  `cake_nvfp4_per_token/support.py`). Adding one means extending
+  `_EXPERIMENTAL_CORE_RE` in `build_backend.py` and
+  `scripts/check_experimental_split.py`.
+- A stable module that must register an experimental backend at import time
+  guards it with `experimental_package_installed()` (see
+  `flashinfer/moe_ep/backends/mega/kernel/sm103/__init__.py`) and exposes its
+  public names lazily (see `flashinfer/moe_ep/__init__.py`).
+- `tests/cpu/infra/test_experimental_split.py` imports core in a
+  `flashinfer-python`-only layout; keep it passing.
 
 ## Graduation checklist
 

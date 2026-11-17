@@ -84,7 +84,13 @@ enforces this; hand-rolled `"auto"` routing calls
 * correctness tests against a reference in `tests/experimental/`, validated on
   the intended hardware, plus a runnable example;
 * no registration in `flashinfer/aot.py` (experimental features are JIT-only
-  and never ship in pre-built packages).
+  and never ship in pre-built packages);
+* core keeps working without the experimental code: release builds ship
+  `flashinfer/experimental/` (except the namespace, the Cake training backends
+  and one support checker) in the separate `flashinfer-experimental` wheel, so
+  every core path into it must be a deferred import or guarded by
+  `experimental_package_installed()` — `tests/cpu/infra/test_experimental_split.py`
+  imports core without it.
 
 Experimental features provide no compatibility guarantees and may be removed
 without deprecation. Changes under `flashinfer/experimental/` receive narrower

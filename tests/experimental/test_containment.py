@@ -26,9 +26,11 @@ checked here, one test each:
    imports nothing from ``flashinfer.experimental`` and every ``gen_*``
    generator that ``gen_all_modules`` calls comes from outside that tree.
 2. Core imports ``flashinfer.experimental`` only on demand, through deferred
-   (function-local) imports.  The one sanctioned module-level import is the
+   (function-local) imports.  The sanctioned module-level imports are the
    lightweight ``*.support`` module that defines an ``@experimental_backend``
-   checker; imports under ``if TYPE_CHECKING:`` never run and are not counted.
+   checker and the opt-in helpers of the namespace module itself (its
+   ``__all__``); imports under ``if TYPE_CHECKING:`` never run and are not
+   counted.
    Every other module-level import is a runtime violation unless ``ALLOWLIST``
    names it.
 3. ``import flashinfer`` loads exactly the experimental modules that sanctioned
@@ -69,16 +71,6 @@ ALLOWLIST = (
         "shim re-exporting the runtime symbols of the MegaMoE v3 package",
     ),
     (
-        "flashinfer/moe_ep/__init__.py",
-        "..experimental.cake_w8a8_megamoe_ep16.cake_config",
-        "EP16 MegaMoE registration of the sm103 Cake backend (config)",
-    ),
-    (
-        "flashinfer/moe_ep/__init__.py",
-        "..experimental.cake_w8a8_megamoe_ep16.cake_weights",
-        "EP16 MegaMoE registration of the sm103 Cake backend (weights)",
-    ),
-    (
         "flashinfer/moe_ep/backends/mega/kernel/sm103/__init__.py",
         "flashinfer.experimental.cake_w8a8_megamoe_ep16",
         "the only backend of the sm103 MegaMoE kernel path registers here",
@@ -93,6 +85,25 @@ EXPECTED_MODULES_AFTER_IMPORT = [
     "flashinfer.experimental.cake_nvfp4_per_token",
     "flashinfer.experimental.cake_nvfp4_per_token.support",
 ]
+
+
+def _namespace_helpers() -> frozenset[str]:
+    """``__all__`` of flashinfer/experimental/__init__.py: the opt-in helpers.
+
+    The namespace module ships in flashinfer-python (it is not part of the
+    flashinfer-experimental distribution) and loads no experimental package, so
+    importing these names from it at module level is sanctioned.
+    """
+    tree = ast.parse((EXPERIMENTAL_ROOT / "__init__.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
+        ):
+            return frozenset(ast.literal_eval(node.value))
+    raise AssertionError("flashinfer/experimental/__init__.py defines no __all__")
+
+
+_NAMESPACE_HELPERS = _namespace_helpers()
 
 
 def _is_experimental(module: str) -> bool:
@@ -237,7 +248,14 @@ def _scan_core() -> list[_ExperimentalImport]:
             for _, written, module, target in _imported_modules(node, package):
                 if target is None or not _is_experimental(target):
                     continue
-                sanctioned = module.endswith(".support") or target.endswith(".support")
+                sanctioned = (
+                    module.endswith(".support")
+                    or target.endswith(".support")
+                    or (
+                        module == EXPERIMENTAL_PACKAGE
+                        and target.rpartition(".")[2] in _NAMESPACE_HELPERS
+                    )
+                )
                 support[written] = support.get(written, True) and sanctioned
             for written, sanctioned in sorted(support.items()):
                 found.append(

@@ -22,12 +22,20 @@ limitations under the License.
 # ``flashinfer.experimental.cake_w8a8_megamoe_ep16``; importing its
 # ``cake_backend`` module registers ``kernel_name="sm103_mxfp8_mxfp8_bf16_cake"``.
 # Both are lightweight at import time (their JIT loaders and tvm-ffi are
-# imported inside the functions that use them).
+# imported inside the functions that use them). The W8A8 backend ships in the
+# flashinfer-experimental distribution; without it the kernel name is simply
+# not registered, and its config class (flashinfer.moe_ep's lazily resolved
+# Sm103_Mxfp8_Mxfp8_Bf16_Cake_MegaMoeConfig) raises with install instructions.
 
-from flashinfer.experimental.cake_w8a8_megamoe_ep16 import (
-    cake_backend as mxfp8_mxfp8_bf16_cake,
-)
+from flashinfer.experimental import experimental_package_installed
 
 from . import bf16_nvfp4_bf16_cake
 
-__all__ = ["bf16_nvfp4_bf16_cake", "mxfp8_mxfp8_bf16_cake"]
+__all__ = ["bf16_nvfp4_bf16_cake"]
+
+if experimental_package_installed():
+    from flashinfer.experimental.cake_w8a8_megamoe_ep16 import (
+        cake_backend as mxfp8_mxfp8_bf16_cake,
+    )
+
+    __all__ += ["mxfp8_mxfp8_bf16_cake"]

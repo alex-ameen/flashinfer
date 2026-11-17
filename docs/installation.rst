@@ -34,12 +34,10 @@ The easiest way to install FlashInfer is via pip. Please note that the package c
 Package Options
 """""""""""""""
 
-FlashInfer provides three packages:
+FlashInfer provides four packages:
 
 - **flashinfer-python**: Core package that compiles/downloads kernels on first use
-
-  Release wheels on PyPI leave out the kernel sources of the experimental features under ``flashinfer.experimental`` to stay under PyPI's file size limit; those features need a nightly wheel from https://flashinfer.ai/whl or an install from source.
-
+- **flashinfer-experimental**: The experimental APIs and backends under ``flashinfer.experimental``, published separately so that ``flashinfer-python`` stays small (see :ref:`experimental-features`)
 - **flashinfer-cubin**: Pre-compiled kernel binaries for all supported GPU architectures
 - **flashinfer-jit-cache**: CUDA-specific shim that installs architecture-specific pre-built kernel providers
 
@@ -61,6 +59,37 @@ explicitly. See :doc:`cli` for all options, and :ref:`upgrading` before
 upgrading an existing installation.
 
 
+.. _experimental-features:
+
+Experimental features
+^^^^^^^^^^^^^^^^^^^^^
+
+Release wheels of ``flashinfer-python`` (PyPI and the nightly index) do not
+contain FlashInfer's experimental APIs and backends. They ship in the
+``flashinfer-experimental`` package, which installs into the same
+``flashinfer`` package and pins the exact ``flashinfer-python`` version it was
+built with:
+
+.. code-block:: bash
+
+    pip install "flashinfer-python[experimental]"
+    # equivalently
+    pip install flashinfer-python flashinfer-experimental
+
+You need it if you call an experimental API (a function marked
+``@flashinfer_experimental_api``; it emits ``ExperimentalWarning`` on first use)
+or explicitly select an experimental backend of a stable API (for example
+``backend="cake"`` of ``mm_fp4``, or an experimental MoE-EP ``kernel_name``).
+Without it, ``import flashinfer`` and every stable API keep working, automatic
+backend selection skips the experimental backends, and an experimental call
+raises ``ModuleNotFoundError`` with the install command. The stable
+``flashinfer.cake_*_train`` training facades are part of ``flashinfer-python``.
+
+If your project depends on ``flashinfer-python`` and uses experimental
+features, add ``flashinfer-experimental`` (or the ``experimental`` extra) to
+its dependencies. Installs from source contain the whole tree and need no
+extra package. See :doc:`experimental` for the policy.
+
 .. _upgrading:
 
 Upgrading
@@ -81,6 +110,11 @@ old wheels: cubins are downloaded on demand and kernels are JIT-compiled, as if
 the wheels were not installed. Results stay correct, but first calls are slow
 again and offline machines can fail to load kernels. Set
 ``FLASHINFER_DISABLE_VERSION_CHECK=1`` only if you intentionally mix versions.
+
+``flashinfer-experimental`` pins ``flashinfer-python==<its version>``, so
+``pip install -U "flashinfer-python[experimental]"`` upgrades both together. If
+the two differ anyway (for example after ``pip install --no-deps``), FlashInfer
+warns at import; reinstall the matching ``flashinfer-experimental``.
 
 **flashinfer-cubin moved off PyPI.** ``flashinfer-cubin`` 0.6.13 was the last
 release published to PyPI; newer releases are only on the FlashInfer wheel
@@ -129,6 +163,12 @@ You can follow the steps below to install FlashInfer from source code:
 
        cd flashinfer
        python -m pip install -v .
+
+   A source install includes the experimental features; the separate
+   ``flashinfer-experimental`` package exists only for release wheels. To
+   build the release layout, build ``flashinfer-python`` with
+   ``FLASHINFER_SPLIT_EXPERIMENTAL=1`` and then
+   ``python -m build --no-isolation --wheel flashinfer-experimental``.
 
    **For development**, install in editable mode:
 

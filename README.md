@@ -95,6 +95,7 @@ pip install flashinfer-python
 **Package Options:**
 
 - **flashinfer-python**: Core package that compiles/downloads kernels on first use
+- **flashinfer-experimental**: The experimental APIs and backends (`flashinfer.experimental`), published separately to keep `flashinfer-python` small; install it with `pip install "flashinfer-python[experimental]"`
 - **flashinfer-cubin**: Pre-compiled kernel binaries for all supported GPU architectures
 - **flashinfer-jit-cache**: CUDA-specific shim that installs architecture-specific pre-built kernel providers
 
@@ -108,6 +109,14 @@ flashinfer download-kernels
 `flashinfer download-kernels` installs the `flashinfer-cubin` and `flashinfer-jit-cache` wheels that match the installed `flashinfer-python` and CUDA versions. By default it installs pre-built kernels for every supported GPU architecture (several GB); pass `--mode minimal` to install the jit-cache provider only for the visible GPUs, or `--sm` (e.g. `--sm sm90a`, repeatable) to choose architectures explicitly.
 
 > **Upgrading:** the kernel wheels must match `flashinfer-python` exactly and are not upgraded with it. Run `flashinfer download-kernels` again after every `pip install -U flashinfer-python`; until then FlashInfer warns at import and ignores the old wheels (falling back to on-demand downloads and JIT compilation). Also note that `flashinfer-cubin` is no longer published to PyPI (0.6.13 was the last release there): a plain `pip install -U flashinfer-cubin` installs that stale wheel, so install it through `flashinfer download-kernels` or from `--index-url https://flashinfer.ai/whl`. See [Upgrading](https://docs.flashinfer.ai/installation.html#upgrading).
+
+**For experimental features**, install the `experimental` extra (it pulls in `flashinfer-experimental`, which pins the matching `flashinfer-python` version):
+
+```bash
+pip install "flashinfer-python[experimental]"
+```
+
+> **Experimental features moved to `flashinfer-experimental`:** release wheels of `flashinfer-python` no longer contain the experimental APIs and backends under `flashinfer.experimental` (stable APIs, including the `flashinfer.cake_*_train` facades, are unaffected). If you call an experimental API (one marked `@flashinfer_experimental_api`, which warns `ExperimentalWarning` on first use) or select an experimental backend by name (for example `backend="cake"` of `mm_fp4`), add `flashinfer-experimental` to your dependencies, or depend on `flashinfer-python[experimental]`. Without it these calls raise `ModuleNotFoundError` with the install command. See [Experimental features](https://docs.flashinfer.ai/installation.html#experimental-features).
 
 **For Blackwell (SM100+) CuTe DSL kernels**, install with the CUDA 13 extra to enable Blackwell-optimized kernels:
 
@@ -156,9 +165,16 @@ python -m pip install --no-build-isolation -e . -v
 > python -m pip install --upgrade pip setuptools
 > ```
 
+A source install contains the whole experimental tree; `flashinfer-experimental` is only needed for release wheels.
+
 Build optional packages:
 
 ```bash
+# Release layout: flashinfer-python without the experimental tree, plus the
+# flashinfer-experimental wheel (both from this checkout, same version)
+FLASHINFER_SPLIT_EXPERIMENTAL=1 python -m build --no-isolation --wheel
+python -m build --no-isolation --wheel flashinfer-experimental
+
 # flashinfer-cubin
 python -m build --no-isolation --wheel flashinfer-cubin
 python -m pip install flashinfer-cubin/dist/*.whl
@@ -186,6 +202,7 @@ For more details, see the [Install from Source documentation](https://docs.flash
 
 ```bash
 pip install -U --pre flashinfer-python --index-url https://flashinfer.ai/whl/nightly/ --no-deps
+pip install -U --pre flashinfer-experimental --index-url https://flashinfer.ai/whl/nightly/ --no-deps  # optional: experimental features
 pip install flashinfer-python  # Install dependencies from PyPI
 flashinfer download-kernels --nightly
 ```

@@ -27,6 +27,7 @@ from typing import Optional
 import torch
 
 from ...utils import experimental_backend, supported_compute_capability
+from .. import experimental_package_installed
 
 CAKE_K_TILE = 256  # smallest mainloop K tile of the generated GEMM programs
 
@@ -57,6 +58,11 @@ def cake_mm_fp4_requirement(
     weight, ``N % 8 == 0``, ``K % 256 == 0`` and the output is bf16 / fp16.
     """
     explicit = backend == "cake"
+    if not explicit and not experimental_package_installed():
+        # The kernels ship in flashinfer-experimental; automatic selection
+        # skips the backend without it (an explicit backend="cake" reports the
+        # missing package from its deferred import instead).
+        return False
 
     def reject(message: str) -> bool:
         if explicit:

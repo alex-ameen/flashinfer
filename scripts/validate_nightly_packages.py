@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that nightly tests use the kernel wheels built in this run."""
+"""Validate that nightly tests use the kernel and experimental wheels built in this run."""
 
 from __future__ import annotations
 
@@ -34,9 +34,17 @@ def _provider_versions() -> dict[str, str]:
 
 def _validation_errors() -> list[str]:
     flashinfer_version = _required_version("flashinfer-python")
+    experimental_version = _required_version("flashinfer-experimental")
     cubin_version = _required_version("flashinfer-cubin")
     shim_version = _required_version("flashinfer-jit-cache")
     errors = []
+
+    if experimental_version != flashinfer_version:
+        errors.append(
+            "flashinfer-experimental version "
+            f"{experimental_version!r} does not match flashinfer-python "
+            f"{flashinfer_version!r}"
+        )
 
     if cubin_version != flashinfer_version:
         errors.append(
@@ -63,6 +71,15 @@ def _validation_errors() -> list[str]:
                 f"flashinfer-jit-cache {shim_version!r}"
             )
 
+    # The experimental tree must come from flashinfer-experimental, so the
+    # suite exercises the split layout that users install.
+    experimental = importlib.import_module("flashinfer.experimental")
+    if not experimental.experimental_package_installed():
+        errors.append(
+            "flashinfer.experimental reports the flashinfer-experimental "
+            "packages as missing"
+        )
+
     flashinfer_cubin = importlib.import_module("flashinfer_cubin")
     jit_env = importlib.import_module("flashinfer.jit.env")
     package_cubin_dir = Path(flashinfer_cubin.get_cubin_dir()).resolve()
@@ -82,7 +99,10 @@ def main() -> None:
     if errors:
         detail = "\n".join(f"- {error}" for error in errors)
         raise SystemExit(f"Nightly package validation failed:\n{detail}")
-    print("Nightly kernel package versions and cubin directory are consistent.")
+    print(
+        "Nightly kernel and experimental package versions and the cubin "
+        "directory are consistent."
+    )
 
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ def _configure_packages(
     validator,
     *,
     flashinfer_version="0.7.0.post1",
+    experimental_version="0.7.0.post1",
+    experimental_installed=True,
     cubin_version="0.7.0.post1",
     shim_version="0.7.0.post1+cu130",
     provider_versions=None,
@@ -36,6 +38,7 @@ def _configure_packages(
 ):
     versions = {
         "flashinfer-python": flashinfer_version,
+        "flashinfer-experimental": experimental_version,
         "flashinfer-cubin": cubin_version,
         "flashinfer-jit-cache": shim_version,
     }
@@ -47,6 +50,9 @@ def _configure_packages(
     ]
     modules = {
         "flashinfer_cubin": SimpleNamespace(get_cubin_dir=lambda: package_cubin_dir),
+        "flashinfer.experimental": SimpleNamespace(
+            experimental_package_installed=lambda: experimental_installed
+        ),
         "flashinfer.jit.env": SimpleNamespace(
             FLASHINFER_CUBIN_DIR=selected_cubin_dir or package_cubin_dir
         ),
@@ -78,6 +84,14 @@ def test_nightly_package_validation_accepts_matching_packages(monkeypatch) -> No
         (
             {"cubin_version": "0.7.0"},
             "flashinfer-cubin version '0.7.0' does not match",
+        ),
+        (
+            {"experimental_version": "0.7.0"},
+            "flashinfer-experimental version '0.7.0' does not match",
+        ),
+        (
+            {"experimental_installed": False},
+            "reports the flashinfer-experimental packages as missing",
         ),
         (
             {"selected_cubin_dir": "/tmp/.cache/flashinfer/cubins"},

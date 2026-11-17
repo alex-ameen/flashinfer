@@ -31,6 +31,13 @@ point that validates, selects the backend, and hands off to this package.
   `@flashinfer_experimental_api` function, or passing `backend="<name>"` to a
   stable API. Both warn once (`ExperimentalWarning`).
 - **Never** eagerly import this package from `flashinfer/__init__.py`.
+- Core must work without this directory's contents. Release builds ship it in
+  the separate `flashinfer-experimental` wheel; `flashinfer-python` keeps only
+  `__init__.py`, `cake/` and `cake_nvfp4_per_token/{__init__,support}.py`
+  (README.md, "Packaging"). A module-level registration in core is guarded by
+  `experimental_package_installed()`; a kept support checker imports nothing
+  else from this tree. `tests/cpu/infra/test_experimental_split.py` checks
+  both layouts.
 - Autotuning inherits the gate because it tunes over the filtered candidate
   list. Trace-apply is out of scope: experimental backends need not support
   trace.

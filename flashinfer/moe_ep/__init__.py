@@ -176,19 +176,47 @@ from .cake_mxfp8_megamoe_ep16 import (
     preprocess_cake_mxfp8_megamoe_ep16_weights,
 )
 
-# Experimental backend behind the stable MoEEpMegaLayer API (explicit opt-in by
-# kernel_name; see flashinfer/experimental/cake_w8a8_megamoe_ep16/README.md).
-# The experimental package imports only ``moe_ep`` submodules (``weights``,
-# ``config``, ``core.*``), so this import resolves while this package is still
-# initializing; its backend module registers through backends/mega/kernel/sm103
-# and is lightweight at import time (no tvm-ffi, JIT or NVSHMEM imports).
-from ..experimental.cake_w8a8_megamoe_ep16.cake_config import (
-    Sm103_Mxfp8_Mxfp8_Bf16_Cake_MegaMoeConfig,
-)
-from ..experimental.cake_w8a8_megamoe_ep16.cake_weights import (
-    TransformedCakeW8a8MegaWeights,
-    preprocess_mega_weights as preprocess_sm103_mxfp8_cake_mega_weights,
-)
+# The experimental sm103 W8A8 Cake backend behind the stable MoEEpMegaLayer API
+# (explicit opt-in by kernel_name; see
+# flashinfer/experimental/cake_w8a8_megamoe_ep16/README.md) ships in the
+# flashinfer-experimental distribution. Its public names below resolve lazily
+# (module ``__getattr__``), so ``import flashinfer.moe_ep`` works without it.
+_EXPERIMENTAL_EXPORTS = {
+    "Sm103_Mxfp8_Mxfp8_Bf16_Cake_MegaMoeConfig": (
+        "cake_config",
+        "Sm103_Mxfp8_Mxfp8_Bf16_Cake_MegaMoeConfig",
+    ),
+    "TransformedCakeW8a8MegaWeights": (
+        "cake_weights",
+        "TransformedCakeW8a8MegaWeights",
+    ),
+    "preprocess_sm103_mxfp8_cake_mega_weights": (
+        "cake_weights",
+        "preprocess_mega_weights",
+    ),
+}
+
+
+def __getattr__(name: str):
+    if name in _EXPERIMENTAL_EXPORTS:
+        import importlib
+
+        module, attribute = _EXPERIMENTAL_EXPORTS[name]
+        value = getattr(
+            importlib.import_module(
+                f"..experimental.cake_w8a8_megamoe_ep16.{module}", __name__
+            ),
+            attribute,
+        )
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_EXPERIMENTAL_EXPORTS))
+
+
 from .config import (
     BootstrapConfig,
     CombineInputParams,
@@ -413,6 +441,13 @@ __all__ = [
     "validate_mega_forward_inputs",
     "validate_split_forward_inputs",
 ]
+
+# Advertise the experimental names only when flashinfer-experimental can serve
+# them, so that ``from flashinfer.moe_ep import *`` works without it.
+from ..experimental import experimental_package_installed as _have_experimental  # noqa: E402
+
+if not _have_experimental():
+    __all__ = [name for name in __all__ if name not in _EXPERIMENTAL_EXPORTS]
 
 
 _pkg_dir = Path(__file__).parent

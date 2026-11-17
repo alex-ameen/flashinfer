@@ -210,3 +210,36 @@ def test_jit_cache_wheel_lands_in_cuda_subdir(whl_index, tmp_path):
     content = _index_for(out, package="flashinfer-jit-cache", cuda="130").read_text()
     assert JIT_WHEEL in content
     assert 'data-untested="true"' in content
+
+
+EXPERIMENTAL_WHEEL = "flashinfer_experimental-0.6.18.dev20260915-py3-none-any.whl"
+
+
+@pytest.mark.parametrize(
+    ("name", "package", "version"),
+    [
+        (EXPERIMENTAL_WHEEL, "flashinfer-experimental", "0.6.18.dev20260915"),
+        (
+            "flashinfer_experimental-0.7.5rc2-py3-none-any.whl",
+            "flashinfer-experimental",
+            "0.7.5rc2",
+        ),
+        ("flashinfer_python-0.7.5-py3-none-any.whl", "flashinfer-python", "0.7.5"),
+    ],
+)
+def test_package_info(whl_index, name, package, version):
+    info = whl_index.get_package_info(pathlib.Path(name))
+    assert info == {"package": package, "version": version, "cuda": None}
+
+
+def test_experimental_wheel_gets_its_own_flat_index(whl_index, tmp_path):
+    # flashinfer-experimental pins flashinfer-python==<version>, so both are
+    # indexed side by side, without a CUDA subdirectory.
+    dist = _make_dist(tmp_path, names=(WHEEL, EXPERIMENTAL_WHEEL))
+    out = tmp_path / "whl"
+    _run(whl_index, dist, out)
+
+    content = _index_for(out, package="flashinfer-experimental").read_text()
+    assert EXPERIMENTAL_WHEEL in content
+    assert WHEEL not in content
+    assert EXPERIMENTAL_WHEEL not in _index_for(out).read_text()

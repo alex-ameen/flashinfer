@@ -1141,6 +1141,10 @@ def _prepare_for_wheel():
         shutil.rmtree(_data_dir)
     _create_data_dir(use_symlinks=False)
 
+    _copy_license_files()
+
+
+def _copy_license_files():
     # Copy license files from licenses/ to root to avoid nested path in wheel
     licenses_dir = _root / "licenses"
     if licenses_dir.exists():
@@ -1201,7 +1205,10 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
 
 def build_sdist(sdist_directory, config_settings=None):
     _prepare_for_sdist()
-    return orig.build_sdist(sdist_directory, config_settings)
+    name = orig.build_sdist(sdist_directory, config_settings)
+    if _flag(_SPLIT_EXPERIMENTAL_FLAG):
+        _split_sdist(Path(sdist_directory) / name)
+    return name
 
 
 # Wheel post-processing (flashinfer-ai/flashinfer#7977).
@@ -1213,30 +1220,41 @@ def build_sdist(sdist_directory, config_settings=None):
 # corrected on the finished wheel: every kept entry is re-deflated at level 9
 # and the 3rdparty entries outside the header trees are dropped.
 #
-# With FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES=1 (set by the release
-# workflow for the wheel published to PyPI, not by nightlies or source
-# installs) generated sources under flashinfer/experimental/<pkg>/csrc/** and
-# flashinfer/data/csrc/experimental/** are dropped, except the exact paths in
-# _EXPERIMENTAL_SOURCES_KEEP.
-# Experimental features are JIT-only and intended for main-branch users
-# (flashinfer/experimental/README.md), and PyPI caps flashinfer-python files at
-# 100 MB. The Cake training backends one level deeper,
-# flashinfer/experimental/cake/<pkg>/csrc/**, are not matched and ship in every
-# wheel: they back the stable flashinfer.cake_<op>_<det|nondet>_train[_kcp]
-# facades (#8928). Python modules, build.json manifests and route catalogs stay,
-# so `import flashinfer` is unchanged. Loads requiring omitted sources fail on
-# first use; the marker file below explains how to obtain those sources.
-_EXPERIMENTAL_SOURCES_FLAG = "FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES"
-_EXPERIMENTAL_SOURCES_MARKER = "flashinfer/experimental/KERNEL_SOURCES_EXCLUDED.txt"
-_EXPERIMENTAL_SOURCES_RE = re.compile(
-    r"^(flashinfer/experimental/[^/]+/csrc/|flashinfer/data/csrc/experimental/)"
+# With FLASHINFER_SPLIT_EXPERIMENTAL=1 (set by release-build.yml for the release
+# and nightly artifacts; source installs leave it unset and keep the whole tree)
+# the experimental tree is split out of flashinfer-python so that its PyPI
+# artifacts stay small: the wheel and the sdist drop every path that
+# ``_is_split_experimental_entry`` matches, and those paths ship in the separate
+# ``flashinfer-experimental`` wheel instead (``build_experimental_wheel``, built
+# from flashinfer-experimental/). Both distributions install into the same
+# ``flashinfer`` package and never contain the same file.
+#
+# Split out: flashinfer/experimental/** (Python packages, generated csrc/**,
+# manifests), their shared generated sources in csrc/experimental/** (installed
+# as flashinfer/data/csrc/experimental/**) and the top-level ``b12x`` alias
+# package. Kept in flashinfer-python (``_EXPERIMENTAL_CORE_RE``), because stable
+# code needs them without the experimental distribution:
+#
+# * flashinfer/experimental/__init__.py: the namespace, the opt-in helpers and
+#   the "install flashinfer-experimental" diagnostic;
+# * flashinfer/experimental/cake/**: the Cake training backends behind the
+#   stable flashinfer.cake_<op>_<det|nondet>_train[_kcp] facades (#8928);
+# * flashinfer/experimental/cake_nvfp4_per_token/{__init__,support}.py: the
+#   import-light checker flashinfer/gemm/gemm_base.py imports at module level
+#   to register mm_fp4's experimental "cake" backend.
+#
+# tests/cpu/infra/test_experimental_split.py keeps this list and the import
+# graph of core consistent.
+_SPLIT_EXPERIMENTAL_FLAG = "FLASHINFER_SPLIT_EXPERIMENTAL"
+EXPERIMENTAL_DISTRIBUTION = "flashinfer-experimental"
+# Wheel paths (the sdist spells csrc/experimental/ and the b12x alias source
+# directory in their repository locations; see _sdist_entry_split).
+_EXPERIMENTAL_TREE_RE = re.compile(
+    r"^(flashinfer/experimental/|flashinfer/data/csrc/experimental/|b12x/)"
 )
-# HC needs these small sources for JIT even in release installs (#8944).
-_EXPERIMENTAL_SOURCES_KEEP = frozenset(
-    {
-        "flashinfer/experimental/hc_sum_sm100/csrc/binding.cu",
-        "flashinfer/experimental/hc_sum_sm100/csrc/kernels.cuh",
-    }
+_EXPERIMENTAL_CORE_RE = re.compile(
+    r"^flashinfer/experimental/"
+    r"(__init__\.py$|cake/|cake_nvfp4_per_token/(__init__|support)\.py$)"
 )
 _THIRD_PARTY_ROOTS = (
     "flashinfer/data/cutlass/",
@@ -1252,25 +1270,19 @@ _THIRD_PARTY_KEEP = (
     "flashinfer/data/cccl/libcudacxx/include/",
     "flashinfer/data/cccl/thrust/thrust/",
 )
-_EXPERIMENTAL_SOURCES_MARKER_TEXT = """\
-This wheel was built with FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES=1: most
-generated kernel sources under flashinfer/experimental/*/csrc and csrc/experimental
-are omitted so that the release wheel stays under PyPI's per-file size limit.
-The HC sum-state JIT sources are exempt from this filter. APIs whose required
-sources are omitted raise when they first try to compile a kernel. To use those
-backends, install a nightly wheel from
-https://flashinfer.ai/whl or install from source:
-    pip install git+https://github.com/flashinfer-ai/flashinfer.git@<tag>
-See flashinfer/experimental/README.md and flashinfer-ai/flashinfer#7977.
-"""
 
 
-def _wheel_entry_dropped(name: str, exclude_experimental: bool) -> bool:
+def _is_split_experimental_entry(name: str) -> bool:
+    """True for wheel paths that ship in flashinfer-experimental, not flashinfer-python."""
+    return bool(_EXPERIMENTAL_TREE_RE.match(name)) and not _EXPERIMENTAL_CORE_RE.match(
+        name
+    )
+
+
+def _wheel_entry_dropped(name: str, split_experimental: bool) -> bool:
     if name.startswith(_THIRD_PARTY_ROOTS):
         return not name.startswith(_THIRD_PARTY_KEEP)
-    if exclude_experimental and _EXPERIMENTAL_SOURCES_RE.match(name):
-        return name not in _EXPERIMENTAL_SOURCES_KEEP
-    return False
+    return split_experimental and _is_split_experimental_entry(name)
 
 
 def _record_hash(data: bytes) -> str:
@@ -1278,10 +1290,20 @@ def _record_hash(data: bytes) -> str:
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
+def _is_top_level_txt(name: str) -> bool:
+    return name.endswith(".dist-info/top_level.txt") and name.count("/") == 1
+
+
+def _without_line(data: bytes, line: bytes) -> bytes:
+    return b"".join(
+        kept for kept in data.splitlines(keepends=True) if kept.strip() != line
+    )
+
+
 def _slim_wheel(wheel_path: Path) -> dict[str, int]:
     """Rewrite ``wheel_path`` in place: drop the entries described above and
     re-deflate the rest at level 9, regenerating RECORD. Returns counters."""
-    exclude_experimental = _flag(_EXPERIMENTAL_SOURCES_FLAG)
+    split_experimental = _flag(_SPLIT_EXPERIMENTAL_FLAG)
     before = wheel_path.stat().st_size
     stats = {"dropped_entries": 0, "dropped_bytes": 0}
     buf = io.BytesIO()
@@ -1310,23 +1332,17 @@ def _slim_wheel(wheel_path: Path) -> dict[str, int]:
                 record_name = name
                 record_info = info
                 continue
-            if name == _EXPERIMENTAL_SOURCES_MARKER:
-                # Regenerated below when the flag is set; never duplicated.
-                continue
-            if _wheel_entry_dropped(name, exclude_experimental):
+            if _wheel_entry_dropped(name, split_experimental):
                 stats["dropped_entries"] += 1
                 stats["dropped_bytes"] += info.compress_size
                 continue
-            put(info, src.read(info))
+            data = src.read(info)
+            if split_experimental and _is_top_level_txt(name):
+                # The b12x alias package moved to flashinfer-experimental.
+                data = _without_line(data, b"b12x")
+            put(info, data)
         if record_name is None:
             raise RuntimeError(f"{wheel_path} has no .dist-info/RECORD")
-        if exclude_experimental:
-            marker = zipfile.ZipInfo(
-                _EXPERIMENTAL_SOURCES_MARKER, date_time=record_info.date_time
-            )
-            marker.external_attr = record_info.external_attr
-            marker.create_system = record_info.create_system
-            put(marker, _EXPERIMENTAL_SOURCES_MARKER_TEXT.encode("utf-8"))
         text = io.StringIO()
         writer = csv.writer(text, delimiter=",", quotechar='"', lineterminator="\n")
         for row in records:
@@ -1342,7 +1358,7 @@ def _slim_wheel(wheel_path: Path) -> dict[str, int]:
     print(
         f"[flashinfer build] wheel post-processing: {before:,} -> {after:,} bytes; "
         f"dropped {stats['dropped_entries']} entries ({stats['dropped_bytes']:,} compressed bytes); "
-        f"experimental kernel sources {'excluded' if exclude_experimental else 'kept'}",
+        f"experimental tree {'split out' if split_experimental else 'kept'}",
         file=sys.stderr,
     )
     stats["before"] = before
@@ -1355,3 +1371,261 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     name = orig.build_wheel(wheel_directory, config_settings, metadata_directory)
     _slim_wheel(Path(wheel_directory) / name)
     return name
+
+
+# ---- flashinfer-python sdist split -------------------------------------------
+
+
+def _sdist_entry_split(relative: str) -> bool:
+    """True for sdist paths (relative to its top directory) of flashinfer-experimental.
+
+    The sdist holds csrc/ and the b12x alias source tree at their repository
+    paths; map them to the wheel paths ``_is_split_experimental_entry`` knows.
+    """
+    if relative.startswith("csrc/experimental/"):
+        return True
+    return _is_split_experimental_entry(relative)
+
+
+def _split_sdist(sdist_path: Path) -> dict[str, int]:
+    """Rewrite the flashinfer-python sdist without the flashinfer-experimental files.
+
+    A wheel built from the result is the split flashinfer-python wheel; the
+    experimental distribution is published as a wheel only (it is built from a
+    repository checkout, see flashinfer-experimental/build_backend.py).
+    """
+    import gzip
+    import tarfile
+
+    stats = {"dropped_entries": 0, "dropped_bytes": 0}
+    before = sdist_path.stat().st_size
+    buf = io.BytesIO()
+    with tarfile.open(sdist_path, "r:gz") as src:
+        members = src.getmembers()
+        top = members[0].name.split("/", 1)[0]
+        with (
+            gzip.GzipFile(fileobj=buf, mode="wb", mtime=0, compresslevel=9) as gz,
+            tarfile.open(fileobj=gz, mode="w", format=src.format) as dst,
+        ):
+            for member in members:
+                head, _, relative = member.name.partition("/")
+                if head != top:
+                    raise RuntimeError(f"unexpected sdist member {member.name}")
+                if relative and _sdist_entry_split(
+                    relative + ("/" if member.isdir() else "")
+                ):
+                    if member.isfile():
+                        stats["dropped_entries"] += 1
+                        stats["dropped_bytes"] += member.size
+                    continue
+                data = src.extractfile(member) if member.isfile() else None
+                if (
+                    member.isfile()
+                    and relative.endswith(".egg-info/SOURCES.txt")
+                    and relative.count("/") == 1
+                ):
+                    text = data.read().decode("utf-8")
+                    kept = [
+                        line
+                        for line in text.splitlines()
+                        if not _sdist_entry_split(line)
+                    ]
+                    payload = ("\n".join(kept) + "\n").encode("utf-8")
+                    member.size = len(payload)
+                    data = io.BytesIO(payload)
+                elif (
+                    member.isfile()
+                    and relative.endswith(".egg-info/top_level.txt")
+                    and relative.count("/") == 1
+                ):
+                    payload = _without_line(data.read(), b"b12x")
+                    member.size = len(payload)
+                    data = io.BytesIO(payload)
+                dst.addfile(member, data)
+    sdist_path.write_bytes(buf.getvalue())
+    print(
+        f"[flashinfer build] sdist split: {before:,} -> {sdist_path.stat().st_size:,} "
+        f"bytes; dropped {stats['dropped_entries']} experimental files",
+        file=sys.stderr,
+    )
+    return stats
+
+
+# ---- flashinfer-experimental wheel -------------------------------------------
+
+_EXPERIMENTAL_README = """\
+# flashinfer-experimental
+
+The experimental APIs and backends of
+[FlashInfer](https://github.com/flashinfer-ai/flashinfer) (`flashinfer.experimental`
+and the experimental entry points that hand off to it), shipped separately from
+`flashinfer-python` so that its release artifacts stay small.
+
+Install it next to the matching `flashinfer-python`; this package pins that
+exact version:
+
+```bash
+pip install "flashinfer-python[experimental]"
+# equivalently
+pip install flashinfer-python flashinfer-experimental
+```
+
+Experimental functionality provides no compatibility guarantees and may change
+or be removed without deprecation. Using it is always an explicit opt-in; see
+`flashinfer/experimental/README.md` in the FlashInfer repository for the policy.
+"""
+
+
+def _experimental_metadata(version: str, license_files: list[str]) -> bytes:
+    lines = [
+        "Metadata-Version: 2.4",
+        f"Name: {EXPERIMENTAL_DISTRIBUTION}",
+        f"Version: {version}",
+        "Summary: FlashInfer experimental APIs and backends",
+        "Author: FlashInfer team",
+        "License-Expression: Apache-2.0",
+        "Project-URL: Homepage, https://github.com/flashinfer-ai/flashinfer",
+        "Requires-Python: <4.0,>=3.10",
+        "Description-Content-Type: text/markdown",
+        *(f"License-File: {name}" for name in license_files),
+        # Both distributions install into one ``flashinfer`` package directory,
+        # so they must come from the same build.
+        f"Requires-Dist: flashinfer-python=={version}",
+    ]
+    return ("\n".join(lines) + "\n\n" + _EXPERIMENTAL_README).encode("utf-8")
+
+
+def _flashinfer_python_dist_info(names) -> str:
+    for name in names:
+        head, sep, _ = name.partition("/")
+        if (
+            sep
+            and head.startswith("flashinfer_python-")
+            and head.endswith(".dist-info")
+        ):
+            return head
+    raise RuntimeError("the wheel has no flashinfer_python-*.dist-info directory")
+
+
+def _extract_experimental_wheel(full_wheel: Path, out_dir: Path) -> Path:
+    """Write the flashinfer-experimental wheel from a full flashinfer-python wheel.
+
+    The full wheel is the unsplit setuptools output, so the experimental wheel
+    and the split flashinfer-python wheel partition one set of files.
+    """
+    with zipfile.ZipFile(full_wheel) as src:
+        infos = [i for i in src.infolist() if not i.filename.endswith("/")]
+        dist_info = _flashinfer_python_dist_info(i.filename for i in infos)
+        version = dist_info[len("flashinfer_python-") : -len(".dist-info")]
+        wheel_file = src.read(f"{dist_info}/WHEEL")
+        tags = [
+            line.split(":", 1)[1].strip()
+            for line in wheel_file.decode("utf-8").splitlines()
+            if line.startswith("Tag:")
+        ]
+        if len(tags) != 1:
+            raise RuntimeError(f"expected one wheel tag in {dist_info}/WHEEL: {tags}")
+        new_info = f"flashinfer_experimental-{version}.dist-info"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"flashinfer_experimental-{version}-{tags[0]}.whl"
+        stamp = src.getinfo(f"{dist_info}/WHEEL").date_time
+        records: list[tuple[str, str, int]] = []
+        moved = 0
+        buf = io.BytesIO()
+        with zipfile.ZipFile(
+            buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+        ) as dst:
+
+            def put(name: str, data: bytes, template: zipfile.ZipInfo | None) -> None:
+                info = zipfile.ZipInfo(
+                    name, date_time=template.date_time if template else stamp
+                )
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = (
+                    template.external_attr if template else 0o100644 << 16
+                )
+                info.create_system = template.create_system if template else 3
+                dst.writestr(info, data, compresslevel=9)
+                records.append((name, _record_hash(data), len(data)))
+
+            for info in infos:
+                if _is_split_experimental_entry(info.filename):
+                    put(info.filename, src.read(info), info)
+                    moved += 1
+            if not moved:
+                raise RuntimeError(f"{full_wheel.name} has no experimental files")
+            license_prefix = f"{dist_info}/licenses/"
+            licenses = [
+                info for info in infos if info.filename.startswith(license_prefix)
+            ]
+            for info in licenses:
+                relative = info.filename[len(license_prefix) :]
+                put(f"{new_info}/licenses/{relative}", src.read(info), info)
+            put(
+                f"{new_info}/METADATA",
+                _experimental_metadata(
+                    version,
+                    [i.filename[len(license_prefix) :] for i in licenses],
+                ),
+                None,
+            )
+            put(f"{new_info}/WHEEL", wheel_file, None)
+            top_level = sorted(
+                {
+                    i.filename.split("/", 1)[0]
+                    for i in infos
+                    if _is_split_experimental_entry(i.filename)
+                }
+            )
+            put(
+                f"{new_info}/top_level.txt",
+                ("\n".join(top_level) + "\n").encode("utf-8"),
+                None,
+            )
+            text = io.StringIO()
+            writer = csv.writer(text, delimiter=",", quotechar='"', lineterminator="\n")
+            for row in records:
+                writer.writerow(row)
+            writer.writerow((f"{new_info}/RECORD", "", ""))
+            record = zipfile.ZipInfo(f"{new_info}/RECORD", date_time=stamp)
+            record.compress_type = zipfile.ZIP_DEFLATED
+            record.external_attr = 0o100644 << 16
+            record.create_system = 3
+            dst.writestr(record, text.getvalue().encode("utf-8"), compresslevel=9)
+        out.write_bytes(buf.getvalue())
+    print(
+        f"[flashinfer build] {out.name}: {moved} files, {out.stat().st_size:,} bytes",
+        file=sys.stderr,
+    )
+    return out
+
+
+def build_experimental_wheel(wheel_directory, config_settings=None) -> str:
+    """Build the flashinfer-experimental wheel; flashinfer-experimental/'s backend.
+
+    Builds the full flashinfer-python wheel from this checkout in a temporary
+    directory (no moe_ep build and no cuda-tile installs: none of their output
+    is experimental) and extracts the experimental files from it.
+    """
+    import tempfile
+
+    if not (_root / "flashinfer" / "experimental" / "_installed.py").is_file():
+        raise RuntimeError(
+            "flashinfer-experimental must be built from a FlashInfer repository "
+            "checkout (flashinfer/experimental is incomplete here)"
+        )
+    if _data_dir.exists():
+        shutil.rmtree(_data_dir)
+    _create_data_dir(use_symlinks=False)
+    # Same license files as the flashinfer-python wheel (the extraction copies
+    # the full wheel's dist-info/licenses into flashinfer-experimental).
+    _copy_license_files()
+    cwd = os.getcwd()
+    os.chdir(_root)  # setuptools reads pyproject.toml from the working directory
+    try:
+        with tempfile.TemporaryDirectory(prefix="flashinfer-experimental-") as tmp:
+            full = orig.build_wheel(tmp, config_settings)
+            out = _extract_experimental_wheel(Path(tmp) / full, Path(wheel_directory))
+    finally:
+        os.chdir(cwd)
+    return out.name

@@ -12,17 +12,20 @@ on:
       - '.python-version'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-build.yml'
+      - 'build_backend.py'
       - 'build_utils.py'
       - 'ci/cuda-versions.json'
       - 'ci/validate_cuda_versions.py'
       - 'flashinfer/artifacts.py'
       - 'flashinfer-cubin/**'
+      - 'flashinfer-experimental/**'
       - 'flashinfer-jit-cache-provider/**'
       - 'flashinfer-jit-cache/**'
       - 'scripts/build_flashinfer_jit_cache_artifact.sh'
       - 'scripts/build_flashinfer_jit_cache_whl.sh'
       - 'scripts/build_jit_cache_wheel.py'
       - 'scripts/build_jit_cache_shim_wheel.sh'
+      - 'scripts/check_experimental_split.py'
       - 'scripts/collect_ninja_diagnostics.py'
       - 'scripts/jit_cache_build_common.sh'
       - 'scripts/run_with_output_watchdog.py'
@@ -141,7 +144,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.tag }}
       repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
       wheel_version: ${{ needs.setup.outputs.version }}
-      exclude_experimental_sources: true
     secrets:
       SCCACHE_AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
       SCCACHE_AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
@@ -317,9 +319,14 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          echo "Uploading flashinfer (sdist and wheel) to PyPI..."
-          twine upload --verbose --non-interactive dist-python/*
-          echo "✓ Successfully uploaded flashinfer to PyPI"
+          # flashinfer-experimental pins flashinfer-python==<version>; upload
+          # flashinfer-python first so the pin resolves as soon as the
+          # experimental wheel appears on the index.
+          echo "Uploading flashinfer-python (sdist and wheel) to PyPI..."
+          twine upload --verbose --non-interactive dist-python/flashinfer_python-*
+          echo "Uploading flashinfer-experimental (wheel) to PyPI..."
+          twine upload --verbose --non-interactive dist-python/flashinfer_experimental-*.whl
+          echo "✓ Successfully uploaded flashinfer-python and flashinfer-experimental to PyPI"
 
   update-wheel-index:
     needs: [setup, create-release]

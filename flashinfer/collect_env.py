@@ -251,11 +251,17 @@ def _get_torch_info():
     return info
 
 
+_EXACT_MATCH_PACKAGES = ("flashinfer-cubin", "flashinfer-experimental")
+
+
 def _kernel_package_matches(pkg, version, flashinfer_version):
     # Same rule as flashinfer/jit/env.py: flashinfer-cubin must match exactly,
     # while jit-cache wheels may add a CUDA local version (e.g. 0.7.0+cu130).
+    # flashinfer-experimental pins flashinfer-python==<its version> and must
+    # match exactly too.
     return version == flashinfer_version or (
-        pkg != "flashinfer-cubin" and version.startswith(f"{flashinfer_version}+")
+        pkg not in _EXACT_MATCH_PACKAGES
+        and version.startswith(f"{flashinfer_version}+")
     )
 
 
@@ -265,7 +271,7 @@ def _get_kernel_package_info():
         return {}
     info = {}
     fi_version = dists.get("flashinfer-python")
-    for pkg in ("flashinfer-cubin", "flashinfer-jit-cache"):
+    for pkg in ("flashinfer-experimental", "flashinfer-cubin", "flashinfer-jit-cache"):
         ver = dists.get(pkg)
         if ver is None:
             info[pkg] = "not installed"

@@ -1,0 +1,18 @@
+# flashinfer-experimental: the experimental APIs and backends of FlashInfer,
+# split out of the flashinfer-python release artifacts to keep them small.
+#
+# This project has no sources of its own. Its backend builds the full
+# flashinfer-python wheel from the parent checkout and keeps exactly the files
+# that FLASHINFER_SPLIT_EXPERIMENTAL=1 leaves out of flashinfer-python (see
+# "Wheel post-processing" in ../build_backend.py). The wheel's metadata (name,
+# version, flashinfer-python==<version> pin) is generated there too.
+#
+#   python -m build --wheel --no-isolation flashinfer-experimental
+#
+# Wheel only: the distribution is built from a repository checkout, never from
+# an sdist.
+[build-system]
+# Keep in sync with the [build-system] requirements of ../pyproject.toml.
+requires = ["setuptools>=77", "packaging>=24", "apache-tvm-ffi>=0.1.11,<0.2"]
+build-backend = "build_backend"
+backend-path = ["."]

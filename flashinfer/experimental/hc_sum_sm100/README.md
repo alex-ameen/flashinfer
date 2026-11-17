@@ -5,9 +5,10 @@ Experimental, inference-only low-rank HyperConnection. The public opt-in is
 `bind_hc_sum_weights`. No SGLang installation or model object is required.
 This implementation does not change DeepSeek mHC or the SM12x backend.
 
-Wheels built from this revision retain the HC CUDA JIT sources even with
-`FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES=1`. HC remains JIT-only and
-requires CUDA build tools; a source checkout is also supported.
+Release installs need the `flashinfer-experimental` package, which ships this
+backend and its CUDA JIT sources (`pip install "flashinfer-python[experimental]"`).
+HC remains JIT-only and requires CUDA build tools; a source checkout is also
+supported.
 Requirements include PyTorch's CUDA
 `bmm(out_dtype=torch.float32)` API (available in PyTorch 2.8), Triton with Gluon,
 and CuTe-DSL >=4.8. The validated environment is PyTorch2.14.1, Triton3.8.0,

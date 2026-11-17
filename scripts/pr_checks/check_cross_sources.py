@@ -391,7 +391,6 @@ _PLACEHOLDER_PATH_TOKENS = (
 # in a clean checkout. AGENTS.md explicitly calls these out as build artifacts.
 _BUILD_ARTIFACT_PATHS = {
     "flashinfer/_build_meta.py",  # generated from version.txt
-    "flashinfer/experimental/KERNEL_SOURCES_EXCLUDED.txt",  # generated in slim wheels
     "flashinfer/data/cutlass",  # editable-install symlink
     "flashinfer/data/csrc",  # editable-install symlink
     "flashinfer/data/include",  # editable-install symlink

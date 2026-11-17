@@ -16,6 +16,22 @@ Experimental APIs are marked with a warning banner in their documentation. A
 stable API exposes an experimental backend by name; it routes to one
 automatically only when the user opts in (below).
 
+Installing experimental features
+--------------------------------
+
+Release wheels ship the experimental APIs and backends in the separate
+``flashinfer-experimental`` package (it pins the matching ``flashinfer-python``
+version):
+
+.. code-block:: bash
+
+    pip install "flashinfer-python[experimental]"
+
+Without it an experimental call raises ``ModuleNotFoundError`` with this
+install command, and automatic backend selection never considers experimental
+backends. Source installs include everything. See
+:ref:`experimental-features`.
+
 Opting in to experimental features
 ----------------------------------
 

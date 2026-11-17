@@ -46,7 +46,11 @@ echo "Disabling JIT compilation to test with precompiled cache only..."
 export FLASHINFER_DISABLE_JIT=1
 
 echo "Installing flashinfer-python from ${DIST_PYTHON_DIR}..."
-pip install --no-deps "${DIST_PYTHON_DIR}"/*.tar.gz
+pip install --no-deps "${DIST_PYTHON_DIR}"/flashinfer_python-*.tar.gz
+
+# The experimental tree ships in its own wheel; the test suite covers it.
+echo "Installing flashinfer-experimental from ${DIST_PYTHON_DIR}..."
+pip install --no-deps "${DIST_PYTHON_DIR}"/flashinfer_experimental-*.whl
 
 # Verify installation
 echo "Verifying installation..."

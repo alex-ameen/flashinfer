@@ -59,7 +59,9 @@ Experimental backends live under `flashinfer/experimental/`; experimental public
 APIs stay in core with `@flashinfer_experimental_api`. Explicit API/backend use
 warns once; automatic selection requires
 `FLASHINFER_ALLOW_EXPERIMENTAL_AUTO_BACKENDS=1`. Experimental kernels are
-JIT-only and tested under `tests/experimental/`. Follow the
+JIT-only and tested under `tests/experimental/`. Release builds ship them in
+the separate `flashinfer-experimental` wheel, so core must import without them.
+Follow the
 [subtree instructions](flashinfer/experimental/AGENTS.md) and
 [experimental policy](flashinfer/experimental/README.md).
 

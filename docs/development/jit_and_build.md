@@ -240,10 +240,17 @@ Callers own opening, timeout policy, and cleanup; nonblocking contention raises
 tools. Existing `filelock.FileLock` users retain their behavior.
 
 `build_backend.build_wheel` calls `_slim_wheel`: level-9 deflate, removal of
-vendored `3rdparty` Python trees swept up by package discovery, and optional
-experimental-source exclusion with `FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES=1`
-in release builds, except the two HC JIT sources in `_EXPERIMENTAL_SOURCES_KEEP`.
-It regenerates RECORD. See `tests/cpu/infra/test_build_backend_slim_wheel.py`.
+vendored `3rdparty` Python trees swept up by package discovery, and, with
+`FLASHINFER_SPLIT_EXPERIMENTAL=1` (release and nightly builds), removal of the
+experimental tree that ships in the separate `flashinfer-experimental` wheel
+(`build_sdist` drops the same files from the sdist). It regenerates RECORD.
+`python -m build --wheel flashinfer-experimental` builds that wheel from the same
+checkout: `build_experimental_wheel` builds the full wheel and keeps exactly the
+split-out files, under its own metadata that pins `flashinfer-python==<version>`.
+`flashinfer/experimental/README.md` ("Packaging") lists what stays in
+`flashinfer-python`; `scripts/check_experimental_split.py` checks built artifacts.
+See `tests/cpu/infra/test_build_backend_slim_wheel.py` and
+`tests/cpu/infra/test_experimental_split.py`.
 
 ## Bindings and dependencies
 

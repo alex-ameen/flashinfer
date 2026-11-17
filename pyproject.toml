@@ -25,6 +25,10 @@ urls = { Homepage = "https://github.com/flashinfer-ai/flashinfer" }
 license-files = ["LICENSE", "NOTICE", "LICENSE*.txt", "licenses/LICENSE.kda-for-kda", "licenses/LICENSE.cudnn-frontend-MIT.txt", "licenses/LICENSE.batch-invariant-ops.txt"]
 
 [project.optional-dependencies]
+# The experimental APIs and backends ship in a separate distribution that pins
+# this exact flashinfer-python version (see flashinfer-experimental/), so the
+# extra needs no version of its own: the resolver selects the matching release.
+experimental = ["flashinfer-experimental"]
 b12x = ["torch>=2.12.0", "nvidia-cutlass-dsl[cu13]>=4.8.0", "rich>=13", "safetensors>=0.6"]
 # Static SM103a KDA PTX uses ISA 9.2 and embedded-cubin TVM FFI shims.
 ptx = ["nvidia-cuda-nvcc>=13.2", "apache-tvm-ffi>=0.1.12,<0.2"]
@@ -69,6 +73,7 @@ include = ["flashinfer*", "b12x"]
 exclude = [
   "flashinfer-jit-cache*",
   "flashinfer-cubin*",
+  "flashinfer-experimental*",
   "flashinfer.experimental.b12x._compat*",
   "flashinfer.prims_ts.moe.tools*",
   "flashinfer.batch_invariant.lean*",

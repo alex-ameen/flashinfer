@@ -76,6 +76,8 @@ def _kernel_package_info(monkeypatch, dists):
     [
         ("flashinfer-cubin", "0.7.0", True),
         ("flashinfer-cubin", "0.7.0+cu130", False),
+        ("flashinfer-experimental", "0.7.0", True),
+        ("flashinfer-experimental", "0.7.0+cu130", False),
         ("flashinfer-jit-cache", "0.7.0", True),
         ("flashinfer-jit-cache", "0.7.0+cu130", True),
         ("flashinfer-jit-cache", "0.7.0.post1+cu130", False),
@@ -92,6 +94,7 @@ def test_matching_kernel_packages_not_flagged(monkeypatch):
         monkeypatch,
         {
             "flashinfer-python": "0.7.0",
+            "flashinfer-experimental": "0.7.0",
             "flashinfer-cubin": "0.7.0",
             "flashinfer-jit-cache": "0.7.0+cu130",
             "flashinfer-jit-cache-sm90a": "0.7.0+cu130",
@@ -100,6 +103,7 @@ def test_matching_kernel_packages_not_flagged(monkeypatch):
     )
 
     assert info == {
+        "flashinfer-experimental": "0.7.0",
         "flashinfer-cubin": "0.7.0",
         "flashinfer-jit-cache": "0.7.0+cu130",
         "flashinfer-jit-cache providers": "sm100a, sm90a",
@@ -112,6 +116,7 @@ def test_stale_kernel_packages_flagged(monkeypatch):
         monkeypatch,
         {
             "flashinfer-python": "0.7.0.post1",
+            "flashinfer-experimental": "0.7.0",
             "flashinfer-cubin": "0.7.0",
             "flashinfer-jit-cache": "0.7.0+cu130",
             "flashinfer-jit-cache-sm90a": "0.7.0+cu130",
@@ -119,6 +124,9 @@ def test_stale_kernel_packages_flagged(monkeypatch):
     )
 
     assert info == {
+        "flashinfer-experimental": (
+            "0.7.0  ⚠ MISMATCH vs flashinfer-python==0.7.0.post1"
+        ),
         "flashinfer-cubin": "0.7.0  ⚠ MISMATCH vs flashinfer-python==0.7.0.post1",
         "flashinfer-jit-cache": (
             "0.7.0+cu130  ⚠ MISMATCH vs flashinfer-python==0.7.0.post1"

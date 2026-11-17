@@ -3,6 +3,7 @@ Update wheel index for flashinfer packages.
 
 This script generates PEP 503 compatible simple repository index pages for:
 - flashinfer-python (no CUDA suffix in version)
+- flashinfer-experimental (no CUDA suffix in version)
 - flashinfer-cubin (no CUDA suffix in version)
 - flashinfer-jit-cache (has CUDA suffix like +cu134)
 - flashinfer-jit-cache-smXX providers (same CUDA suffix as the shim)
@@ -41,6 +42,20 @@ def get_package_info(wheel_path: pathlib.Path) -> Optional[dict]:
         version = match.group(1)
         return {
             "package": "flashinfer-python",
+            "version": version,
+            "cuda": None,
+        }
+
+    # Try flashinfer-experimental pattern
+    # Supports PEP 440: base_version[{a|b|rc}N][.postN][.devN]
+    match = re.match(
+        r"flashinfer_experimental-([0-9.]+(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?)-",
+        wheel_name,
+    )
+    if match:
+        version = match.group(1)
+        return {
+            "package": "flashinfer-experimental",
             "version": version,
             "cuda": None,
         }
@@ -228,7 +243,7 @@ def update_index(
             # CUDA-specific index for jit-cache: whl/nightly/cu130/flashinfer-jit-cache/
             index_dir = base_output / f"cu{cuda}" / package
         else:
-            # No CUDA version for python/cubin: whl/nightly/flashinfer-python/
+            # No CUDA version for python/experimental/cubin: whl/nightly/flashinfer-python/
             index_dir = base_output / package
 
         index_dir.mkdir(parents=True, exist_ok=True)
