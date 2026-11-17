@@ -18,6 +18,7 @@ import base64
 import csv
 import hashlib
 import io
+import json
 import os
 import re
 import shutil
@@ -1273,6 +1274,47 @@ def _wheel_entry_dropped(name: str, exclude_experimental: bool) -> bool:
     return False
 
 
+# Packed JIT sources.
+#
+# A wheel deflates every entry on its own, so the thousands of near-identical
+# generated kernel sources under flashinfer/data/csrc compress poorly (~56 MB
+# for 0.7.5; the same bytes are ~6 MB as one xz stream). With
+# FLASHINFER_PACK_CSRC=1 (set by release-build.yml) every kept
+# flashinfer/data/csrc/** entry is moved into one solid archive,
+# flashinfer/data/csrc.tar.xz, described by flashinfer/data/csrc.json (format,
+# sha256, file count, version). flashinfer.jit.env.FLASHINFER_CSRC_DIR unpacks it
+# once into the FlashInfer cache on first access (flashinfer/jit/_packed_sources.py).
+# The archive is deterministic: sorted names, fixed owner and mtime, and each
+# file's permission bits taken from its wheel entry. The sdist, source checkouts
+# and editable installs keep the plain tree.
+_PACK_CSRC_FLAG = "FLASHINFER_PACK_CSRC"
+_PACKED_CSRC_PREFIX = "flashinfer/data/csrc/"
+_PACKED_CSRC_ARCHIVE = "flashinfer/data/csrc.tar.xz"
+_PACKED_CSRC_MANIFEST = "flashinfer/data/csrc.json"
+_PACKED_CSRC_FORMAT = 1  # keep in sync with flashinfer/jit/_packed_sources.py
+
+
+def _pack_sources(entries: list[tuple[str, bytes, int]]) -> bytes:
+    """Deterministic xz-compressed tar of ``(relative name, data, mode)``."""
+    import lzma
+    import tarfile
+
+    buf = io.BytesIO()
+    with (
+        lzma.open(buf, "wb", preset=9) as xz,
+        tarfile.open(fileobj=xz, mode="w", format=tarfile.PAX_FORMAT) as tar,
+    ):
+        for name, data, mode in sorted(entries):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = mode
+            info.mtime = 0
+            info.uid = info.gid = 0
+            info.uname = info.gname = ""
+            tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
 def _record_hash(data: bytes) -> str:
     digest = hashlib.sha256(data).digest()
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -1282,8 +1324,12 @@ def _slim_wheel(wheel_path: Path) -> dict[str, int]:
     """Rewrite ``wheel_path`` in place: drop the entries described above and
     re-deflate the rest at level 9, regenerating RECORD. Returns counters."""
     exclude_experimental = _flag(_EXPERIMENTAL_SOURCES_FLAG)
+    pack_csrc = _flag(_PACK_CSRC_FLAG)
     before = wheel_path.stat().st_size
-    stats = {"dropped_entries": 0, "dropped_bytes": 0}
+    stats = {"dropped_entries": 0, "dropped_bytes": 0, "packed_entries": 0}
+    packed: list[tuple[str, bytes, int]] = []
+    previous: list[zipfile.ZipInfo] = []
+    csrc_template: zipfile.ZipInfo | None = None
     buf = io.BytesIO()
     record_name = None
     with (
@@ -1317,9 +1363,45 @@ def _slim_wheel(wheel_path: Path) -> dict[str, int]:
                 stats["dropped_entries"] += 1
                 stats["dropped_bytes"] += info.compress_size
                 continue
+            if pack_csrc and name.startswith(_PACKED_CSRC_PREFIX):
+                mode = (info.external_attr >> 16) & 0o777 or 0o644
+                packed.append((name[len(_PACKED_CSRC_PREFIX) :], src.read(info), mode))
+                csrc_template = csrc_template or info
+                continue
+            if pack_csrc and name in (_PACKED_CSRC_ARCHIVE, _PACKED_CSRC_MANIFEST):
+                # An already packed wheel: keep its archive unless plain
+                # entries are being packed now (then it is regenerated below).
+                previous.append(info)
+                continue
             put(info, src.read(info))
+        if not packed:
+            for info in previous:
+                put(info, src.read(info))
         if record_name is None:
             raise RuntimeError(f"{wheel_path} has no .dist-info/RECORD")
+        if packed:
+            archive = _pack_sources(packed)
+            manifest = {
+                "format": _PACKED_CSRC_FORMAT,
+                "sha256": hashlib.sha256(archive).hexdigest(),
+                "files": len(packed),
+                "bytes": sum(len(data) for _, data, _ in packed),
+                "version": record_name.split("/", 1)[0][
+                    len("flashinfer_python-") : -len(".dist-info")
+                ],
+            }
+            for entry_name, payload in (
+                (_PACKED_CSRC_ARCHIVE, archive),
+                (
+                    _PACKED_CSRC_MANIFEST,
+                    (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode(),
+                ),
+            ):
+                entry = zipfile.ZipInfo(entry_name, date_time=csrc_template.date_time)
+                entry.external_attr = 0o100644 << 16
+                entry.create_system = csrc_template.create_system
+                put(entry, payload)
+            stats["packed_entries"] = len(packed)
         if exclude_experimental:
             marker = zipfile.ZipInfo(
                 _EXPERIMENTAL_SOURCES_MARKER, date_time=record_info.date_time
@@ -1342,7 +1424,8 @@ def _slim_wheel(wheel_path: Path) -> dict[str, int]:
     print(
         f"[flashinfer build] wheel post-processing: {before:,} -> {after:,} bytes; "
         f"dropped {stats['dropped_entries']} entries ({stats['dropped_bytes']:,} compressed bytes); "
-        f"experimental kernel sources {'excluded' if exclude_experimental else 'kept'}",
+        f"experimental kernel sources {'excluded' if exclude_experimental else 'kept'}; "
+        f"{stats['packed_entries']} JIT sources packed",
         file=sys.stderr,
     )
     stats["before"] = before

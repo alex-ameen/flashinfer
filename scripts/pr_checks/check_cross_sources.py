@@ -394,6 +394,8 @@ _BUILD_ARTIFACT_PATHS = {
     "flashinfer/experimental/KERNEL_SOURCES_EXCLUDED.txt",  # generated in slim wheels
     "flashinfer/data/cutlass",  # editable-install symlink
     "flashinfer/data/csrc",  # editable-install symlink
+    "flashinfer/data/csrc.tar.xz",  # packed JIT sources in release wheels
+    "flashinfer/data/csrc.json",  # manifest of the packed JIT sources
     "flashinfer/data/include",  # editable-install symlink
 }
 

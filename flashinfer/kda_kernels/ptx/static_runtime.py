@@ -32,7 +32,13 @@ import torch
 
 from ...jit import env as jit_env
 
-SHIMS = jit_env.FLASHINFER_CSRC_DIR / "kda" / "ptx"
+
+def _shims() -> Path:
+    # Resolved per call: FLASHINFER_CSRC_DIR may unpack the release wheel's
+    # packed source archive on first access (flashinfer/jit/env.py).
+    return jit_env.FLASHINFER_CSRC_DIR / "kda" / "ptx"
+
+
 PTX_ARCH = "sm_103a"
 PTXAS_MIN_VERSION = (13, 2)
 
@@ -94,7 +100,7 @@ def _validate_device() -> None:
 def _cubin(name: str) -> bytes:
     """Assemble one retained PTX file for sm_103a, cached by content."""
 
-    source = SHIMS / f"{name}.ptx"
+    source = _shims() / f"{name}.ptx"
     ptxas, version = _ptxas()
     digest = hashlib.sha256(source.read_bytes() + Path(ptxas).read_bytes()).hexdigest()[
         :16
@@ -136,13 +142,13 @@ def _kernel_image(name: str) -> bytes:
     """Validate the launch device and return its PTX or assembled cubin image."""
     _validate_device()
     if _image_kind() == "driver_ptx":
-        return (SHIMS / f"{name}.ptx").read_bytes() + b"\0"
+        return (_shims() / f"{name}.ptx").read_bytes() + b"\0"
     return _cubin(name)
 
 
 @cache
 def _program_table() -> dict:
-    return json.loads((SHIMS / "programs.json").read_text())
+    return json.loads((_shims() / "programs.json").read_text())
 
 
 def _shim_source(program: dict) -> str:
@@ -158,7 +164,7 @@ def _shim_source(program: dict) -> str:
         "CLUSTER_X": program["cluster_x"],
     }
     lines = [f"#define KDA_PTX_{key} {value}" for key, value in defines.items()]
-    return "\n".join(lines) + "\n" + (SHIMS / "shim.cc").read_text()
+    return "\n".join(lines) + "\n" + (_shims() / "shim.cc").read_text()
 
 
 @cache

@@ -397,7 +397,12 @@ FLASHINFER_JIT_DIR: pathlib.Path = FLASHINFER_WORKSPACE_DIR / "cached_ops"
 FLASHINFER_GEN_SRC_DIR: pathlib.Path = FLASHINFER_WORKSPACE_DIR / "generated"
 FLASHINFER_DATA: pathlib.Path = _package_root / "data"
 FLASHINFER_INCLUDE_DIR: pathlib.Path = _package_root / "data" / "include"
-FLASHINFER_CSRC_DIR: pathlib.Path = _package_root / "data" / "csrc"
+# FLASHINFER_CSRC_DIR is resolved on first access (module ``__getattr__``
+# below): release wheels may ship the tree packed (``data/csrc.tar.xz``), and
+# unpacking it belongs to the first JIT compilation, not to ``import flashinfer``.
+FLASHINFER_CSRC_DIR: pathlib.Path
+_PACKED_CSRC_ARCHIVE: pathlib.Path = _package_root / "data" / "csrc.tar.xz"
+_PACKED_CSRC_MANIFEST: pathlib.Path = _package_root / "data" / "csrc.json"
 # FLASHINFER_SRC_DIR = _package_root / "data" / "src"
 CUTLASS_INCLUDE_DIRS: list[pathlib.Path] = [
     _package_root / "data" / "cutlass" / "include",
@@ -409,3 +414,29 @@ CCCL_INCLUDE_DIRS: list[pathlib.Path] = [
     _package_root / "data" / "cccl" / "libcudacxx" / "include",
     _package_root / "data" / "cccl" / "thrust",
 ]
+
+
+def _resolve_csrc_dir() -> pathlib.Path:
+    """The JIT source tree: ``data/csrc``, or the unpacked release archive.
+
+    Source checkouts, editable installs and wheels built without
+    ``FLASHINFER_PACK_CSRC=1`` have a real ``data/csrc`` directory. Packed
+    release wheels have ``data/csrc.tar.xz`` instead, extracted once into
+    ``FLASHINFER_CACHE_DIR / "csrc"`` (see ``_packed_sources``).
+    """
+    unpacked = _package_root / "data" / "csrc"
+    if unpacked.is_dir() or not _PACKED_CSRC_MANIFEST.is_file():
+        return unpacked
+    from ._packed_sources import ensure_unpacked
+
+    return ensure_unpacked(
+        _PACKED_CSRC_ARCHIVE, _PACKED_CSRC_MANIFEST, FLASHINFER_CACHE_DIR / "csrc"
+    )
+
+
+def __getattr__(name: str) -> Any:
+    if name == "FLASHINFER_CSRC_DIR":
+        value = _resolve_csrc_dir()
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

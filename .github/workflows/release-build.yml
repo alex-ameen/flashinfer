@@ -100,6 +100,9 @@ jobs:
         env:
           FLASHINFER_DEV_RELEASE_SUFFIX: ${{ inputs.dev_suffix }}
           FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCES: ${{ inputs.exclude_experimental_sources && '1' || '' }}
+          # Ship flashinfer/data/csrc as one solid xz archive (~56 MB -> ~6 MB);
+          # FLASHINFER_CSRC_DIR unpacks it into the cache on first use.
+          FLASHINFER_PACK_CSRC: '1'
         run: |
           echo "Building flashinfer-python (dev suffix: '${FLASHINFER_DEV_RELEASE_SUFFIX}')..."
           echo "Git commit: $(git rev-parse HEAD)"

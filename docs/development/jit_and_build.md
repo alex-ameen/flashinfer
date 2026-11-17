@@ -245,6 +245,16 @@ experimental-source exclusion with `FLASHINFER_WHEEL_EXCLUDE_EXPERIMENTAL_SOURCE
 in release builds, except the two HC JIT sources in `_EXPERIMENTAL_SOURCES_KEEP`.
 It regenerates RECORD. See `tests/cpu/infra/test_build_backend_slim_wheel.py`.
 
+With `FLASHINFER_PACK_CSRC=1` (release builds), `_slim_wheel` also packs every
+`flashinfer/data/csrc/**` entry into `flashinfer/data/csrc.tar.xz` plus the
+manifest `flashinfer/data/csrc.json`. `FLASHINFER_CSRC_DIR` is then resolved
+lazily by `flashinfer/jit/env.py`: a real `data/csrc` directory wins (source
+checkouts, editable and unpacked installs); otherwise
+`flashinfer/jit/_packed_sources.py` unpacks the archive once into
+`FLASHINFER_CACHE_DIR / "csrc"`. Read `jit_env.FLASHINFER_CSRC_DIR` when a path
+is needed, not at module import, so `import flashinfer` never unpacks. See
+`tests/cpu/infra/test_packed_sources.py`.
+
 ## Bindings and dependencies
 
 Export framework-independent functions with
